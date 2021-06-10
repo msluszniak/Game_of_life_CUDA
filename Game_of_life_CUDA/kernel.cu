@@ -18,13 +18,16 @@
 #include <GL/freeglut.h>
 #include <GLFW/glfw3.h>
 
-
+#define GLFW_KEY_U 85
+#define GLFW_KEY_D 68
 constexpr u_int max_num_blocks = 32768;
 
 using u_int = unsigned int;
 using u_short = unsigned short;
-int image_width = 512;
-int image_height = 512;
+
+
+//int image_width = 512;
+//int image_height = 512;
 
 GLint shDrawTex = -1;
 GLint shDraw = -1;
@@ -32,9 +35,9 @@ struct cudaGraphicsResource* cuda_tex_result_resource;
 struct cudaGraphicsResource* cuda_dest_resource;
 GLuint tex_cudaResult;
 
-bool* map;
-bool* next_state;
-u_int num_threads;
+//bool* map;
+//bool* next_state;
+//u_int num_threads;
 
 __global__ void next_step(bool* map, bool* next_state, u_int width, u_int length, int32_t* image ) {
     u_int total_size = width * length;
@@ -64,47 +67,57 @@ __global__ void next_step(bool* map, bool* next_state, u_int width, u_int length
         // bottom neighbours
         num_neigbhbour_alive += (u_short)map[x_left + y_bottom] + (u_short)map[x + y_bottom] + (u_short)map[x_right + y_bottom];
 
+        // compute state and set color
         next_state[x + y] = num_neigbhbour_alive == 3 || (num_neigbhbour_alive == 2 && map[x + y]);
         image[x + y] = next_state[x + y] ? -1 : 0;
     }
 }
 
 
-__host__ void print_world(bool* map, u_int width, u_int length) {
-    for (u_int i = 0; i < width; ++i) {
-        for (u_int j = 0; j < length; ++j) {
-            char sign;
-            map[i * width + j] ? sign = '*' : sign = ' ';
-            std::cout << sign;
-            //printf("\r%c", sign);
-        }
-        std::cout<<std::endl;
-        //printf("\r\n");
-    }
-}
+//__host__ void print_world(bool* map, u_int width, u_int length) {
+//    for (u_int i = 0; i < width; ++i) {
+//        for (u_int j = 0; j < length; ++j) {
+//            char sign;
+//            map[i * width + j] ? sign = '*' : sign = ' ';
+//            std::cout << sign;
+//            //printf("\r%c", sign);
+//        }
+//        std::cout<<std::endl;
+//        //printf("\r\n");
+//    }
+//}
 
-__host__ void calculate_map(bool*& map, bool*& next_state, u_int width, u_int length, u_short num_threads) {
-    assert(width * length % num_threads == 0);
-    u_int requested_blocks = ((width * length) / num_threads);
+//__host__ void calculate_map(bool*& map, bool*& next_state, u_int width, u_int length, u_short num_threads) {
+//    assert(width * length % num_threads == 0);
+//    u_int requested_blocks = ((width * length) / num_threads);
+//    u_int num_blocks = (u_int)min(max_num_blocks, requested_blocks);
+//    //next_step << <num_blocks, num_threads >> > (map, next_state, width, length);
+//    std::swap(map, next_state);
+//}
+// 
+__host__ void calculate_map(bool*& map, bool*& next_state, u_int image_width, u_int image_height, u_short num_threads, int32_t*&out_data) {
+    assert(image_width * image_height % num_threads == 0);
+    u_int requested_blocks = ((image_width * image_height) / num_threads);
     u_int num_blocks = (u_int)min(max_num_blocks, requested_blocks);
-    //next_step << <num_blocks, num_threads >> > (map, next_state, width, length);
+    next_step <<< num_blocks, num_threads >>> (map, next_state, image_width, image_height, out_data);
     std::swap(map, next_state);
 }
 
 __host__ void createTextureDst(GLuint* tex_cudaResult, unsigned int size_x, unsigned int size_y)
 {
-    // create a texture
+    // this section creates texture
     glGenTextures(1, tex_cudaResult);
     glBindTexture(GL_TEXTURE_2D, *tex_cudaResult);
 
-    // set basic parameters
+    // params setting
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8UI_EXT, size_x, size_y, 0, GL_RGBA_INTEGER_EXT, GL_UNSIGNED_BYTE, NULL);
-    // register this texture with CUDA
+    
+    // register given texture using CUDA
     cudaGraphicsGLRegisterImage(&cuda_tex_result_resource, *tex_cudaResult,
         GL_TEXTURE_2D, cudaGraphicsMapFlagsWriteDiscard);
 }
@@ -121,17 +134,14 @@ GLuint compileGLSLprogram(const char* vertex_shader_src, const char* fragment_sh
         glShaderSource(v, 1, &vertex_shader_src, NULL);
         glCompileShader(v);
 
-        // check if shader compiled
         GLint compiled = 0;
         glGetShaderiv(v, GL_COMPILE_STATUS, &compiled);
 
         if (!compiled)
         {
-            //#ifdef NV_REPORT_COMPILE_ERRORS
             char temp[256] = "";
             glGetShaderInfoLog(v, 256, NULL, temp);
             printf("Vtx Compile failed:\n%s\n", temp);
-            //#endif
             glDeleteShader(v);
             return 0;
         }
@@ -147,17 +157,14 @@ GLuint compileGLSLprogram(const char* vertex_shader_src, const char* fragment_sh
         glShaderSource(f, 1, &fragment_shader_src, NULL);
         glCompileShader(f);
 
-        // check if shader compiled
         GLint compiled = 0;
         glGetShaderiv(f, GL_COMPILE_STATUS, &compiled);
 
         if (!compiled)
         {
-            //#ifdef NV_REPORT_COMPILE_ERRORS
             char temp[256] = "";
             glGetShaderInfoLog(f, 256, NULL, temp);
             printf("frag Compile failed:\n%s\n", temp);
-            //#endif
             glDeleteShader(f);
             return 0;
         }
@@ -185,7 +192,7 @@ GLuint compileGLSLprogram(const char* vertex_shader_src, const char* fragment_sh
     return p;
 }
 
-void initCUDABuffers()
+void initCUDABuffers(u_int image_width, u_int image_height)
 {
     // set up vertex data parameter
     int num_texels = image_width * image_height;
@@ -202,7 +209,6 @@ const GLenum fbo_targets[] =
     GL_COLOR_ATTACHMENT2_EXT, GL_COLOR_ATTACHMENT3_EXT
 };
 
-#ifndef USE_TEXSUBIMAGE2D
 static const char* glsl_drawtex_vertshader_src =
 "void main(void)\n"
 "{\n"
@@ -218,29 +224,21 @@ static const char* glsl_drawtex_fragshader_src =
 "   vec4 c = texture(texImage, gl_TexCoord[0].xy);\n"
 "	gl_FragColor = c / 255.0;\n"
 "}\n";
-#endif
 
 static const char* glsl_draw_fragshader_src =
 //WARNING: seems like the gl_FragColor doesn't want to output >1 colors...
 //you need version 1.3 so you can define a uvec4 output...
 //but MacOSX complains about not supporting 1.3 !!
 // for now, the mode where we use RGBA8UI may not work properly for Apple : only RGBA16F works (default)
-#if defined(__APPLE__) || defined(MACOSX)
-"void main()\n"
-"{"
-"  gl_FragColor = vec4(gl_Color * 255.0);\n"
-"}\n";
-#else
 "#version 130\n"
 "out uvec4 FragColor;\n"
 "void main()\n"
 "{"
 "  FragColor = uvec4(gl_Color.xyz * 255.0, 255.0);\n"
 "}\n";
-#endif
 
 // copy image and process using CUDA
-void generateCUDAImage()
+void generateCUDAImage(u_int image_width, u_int image_height, bool*& map, bool*& next_state, u_int num_threads)
 {
     // run the Cuda kernel
     int32_t* out_data;
@@ -252,11 +250,15 @@ void generateCUDAImage()
     dim3 grid(image_width / block.x, image_height / block.y, 1);
     // execute CUDA kernel
     //launch_cudaProcess(grid, block, 0, out_data, image_width);
-    assert(image_width * image_height % num_threads == 0);
-    u_int requested_blocks = ((image_width * image_height) / num_threads);
-    u_int num_blocks = (u_int)min(max_num_blocks, requested_blocks);
-    next_step << <num_blocks, num_threads >> > (map, next_state, image_width, image_height, out_data);
-    std::swap(map, next_state);
+ 
+
+    //assert(image_width * image_height % num_threads == 0);
+    //u_int requested_blocks = ((image_width * image_height) / num_threads);
+    //u_int num_blocks = (u_int)min(max_num_blocks, requested_blocks);
+    //next_step << <num_blocks, num_threads >> > (map, next_state, image_width, image_height, out_data);
+    //std::swap(map, next_state);
+    calculate_map(map, next_state, image_width, image_height, num_threads, out_data);
+
 
 
     cudaArray* texture_ptr;
@@ -316,9 +318,9 @@ void displayImage(GLuint texture)
 
 
 void
-display()
+display(u_int image_width, u_int image_height, bool*& map, bool*& next_state, u_int num_threads)
 {
-    generateCUDAImage();
+    generateCUDAImage(image_width, image_height, map, next_state, num_threads);
     displayImage(tex_cudaResult);
     cudaDeviceSynchronize();
     //glutSwapBuffers();
@@ -329,114 +331,133 @@ void error_callback(int error, const char* description)
     fprintf(stderr, "Error: %s\n", description);
 }
 
+u_int delay = 250;
+void speed_up() {
+    delay = (int)delay * 0.9;
+}
+
+void slow_down() {
+    delay = (int)delay * 1 / (0.9);
+}
+
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+    if (key == GLFW_KEY_U && action == GLFW_PRESS)
+        speed_up();
+    if (key == GLFW_KEY_D && action == GLFW_PRESS)
+        slow_down();
+}
+
+
 
 int main(int argc, char** argv) {
-    u_int delay = 1000;
-    //u_int width, length, total_size, num_threads;
-    //bool *map, *next_state;
+    u_int image_width, image_height, total_size, num_threads;
+    bool *map, *next_state;
     bool *host_map, *host_next_state;
-    //bool* result;
-    //std::cout << "Welcome to the game of life!" << std::endl;
-    //std::cout << "Please choose f if you want to load data from file or press m to input data manually." << std::endl;
-    //input:
-    //char mode = getchar();
-    //if (mode != 'f' && mode != 'm') {
-    //    std::cout << "You choose wrong mode: " << mode << ". Please use f for file or m for manually." << std::endl;
-    //    goto input;
-    //}
-    //else if (mode == 'f') {
-    //    std::cout << "Now put the name of the file with size and start positions" << std::endl;
-    //    std::string file_name;
-    //    std::cin >> file_name;
-    //    std::ifstream infile("thefile.txt");
+    bool* result;
+    std::cout << "Welcome to the game of life!" << std::endl;
+    std::cout << "Please choose f if you want to load data from file or press m to input data manually." << std::endl;
+    input:
+    char mode = getchar();
+    if (mode != 'f' && mode != 'm') {
+        std::cout << "You choose wrong mode: " << mode << ". Please use f for file or m for manually." << std::endl;
+        goto input;
+    }
+    else if (mode == 'f') {
+        std::cout << "Now put the name of the file with size and start positions" << std::endl;
+        std::string file_name;
+        std::cin >> file_name;
+        
+        std::ifstream infile(file_name.c_str());
+        //infile.open(file_name);
+        if (!infile)
+        {
+            std::cout << "No dupa nie otwiera się" << std::endl;
+        }
+        if (!(infile >> num_threads)) {
+            std::cout << num_threads << std::endl;
+            std::cout << "Wrong file format, file must include number of threads" << std::endl;
+            exit(1);
+        }
+        if (!(infile >> image_width >> image_height)) {
+            std::cout << "Wrong file format, file must include width and height" << std::endl;
+            exit(1);
+        }
+        total_size = image_width * image_height;
+        //cudaMalloc((void**)&host_map, sizeof(bool)*total_size);
+        //cudaMalloc((void**)&host_next_state, sizeof(bool)*total_size);
+        host_map = new bool[total_size];
+        host_next_state = new bool[total_size];
+        for (u_int i = 0; i < total_size; ++i) 
+            host_map[i] = host_next_state[i] = false;
+        u_int num_start_alive;
+        if (!(infile >> num_start_alive)) {
+            std::cout << "Wrong file format, file must include number of alive cells at the beginning" << std::endl;
+            exit(1);
+        }
+        u_int x_pos, y_pos;
+        u_int num_loaded = 0;
+        while (infile >> x_pos >> y_pos){
+            if (x_pos >= image_width)
+                x_pos = x_pos % image_width;
+            if (y_pos >= image_height)
+                y_pos = y_pos % image_height;
+            num_loaded += 2;
+            host_map[x_pos * image_width + y_pos] = true;
+        }
+        if (num_loaded < 2 * num_start_alive) {
+            std::cout << "File does not contains enough coords" << std::endl;
+            /*cudaFree(map);
+            cudaFree(next_state);*/
+            exit(1);
+        }
+        infile.close();
+    }
+    else {
+        std::cout << "Please input number of threads" << std::endl;
+        std::cin >> num_threads;
+        std::cout << "Now, please input width and length"<< std::endl;
+        std::cin >> image_width >> image_height;
+        total_size = image_width * image_height;
+        //cudaMalloc((void**)&host_map, sizeof(bool) * total_size);
+        //cudaMalloc((void**)&host_next_state, sizeof(bool) * total_size);
+        host_map = new bool[total_size];
+        host_next_state = new bool[total_size];
+        //cudaMemset(host_map, false, total_size);
+        //cudaMemset(host_next_state, false, total_size);
+        for (u_int i = 0; i < total_size; ++i)
+            host_map[i] = host_next_state[i] = false;
+        u_int counter = 0;
+        u_int x_pos, y_pos;
+        u_int num_start_alive;
+        std::cout << "Input number of alive cells at the beginning" << std::endl;
+        std::cin >> num_start_alive;
+        std::cout << "Input starting data" << std::endl;
+        while (counter != num_start_alive) {
+            std::cin >> x_pos >> y_pos;
+            if (x_pos >= image_width)
+                x_pos = x_pos % image_width;
+            if (y_pos >= image_height)
+                y_pos = y_pos % image_height;
+            counter++;
+            host_map[x_pos * image_width + y_pos] = true;
+        }
+    }
 
-    //    if (!(infile >> num_threads)) {
-    //        std::cout << "Wrong file format, file must include number of threads" << std::endl;
-    //        exit(1);
-    //    }
-    //    if (!(infile >> width >> length)) {
-    //        std::cout << "Wrong file format, file must include width and height" << std::endl;
-    //        exit(1);
-    //    }
-    //    total_size = width * length;
-    //    //cudaMalloc((void**)&host_map, sizeof(bool)*total_size);
-    //    //cudaMalloc((void**)&host_next_state, sizeof(bool)*total_size);
-    //    host_map = new bool[total_size];
-    //    host_next_state = new bool[total_size];
-    //    for (u_int i = 0; i < total_size; ++i) 
-    //        host_map[i] = host_next_state[i] = false;
-    //    u_int num_start_alive;
-    //    if (!(infile >> num_start_alive)) {
-    //        std::cout << "Wrong file format, file must include number of alive cells at the beginning" << std::endl;
-    //        exit(1);
-    //    }
-    //    u_int x_pos, y_pos;
-    //    u_int num_loaded = 0;
-    //    while (infile >> x_pos >> y_pos){
-    //        if (x_pos >= width)
-    //            x_pos = x_pos % width;
-    //        if (y_pos >= length)
-    //            y_pos = y_pos % length;
-    //        num_loaded += 2;
-    //        host_map[x_pos * width + y_pos] = true;
-    //    }
-    //    if (num_loaded < 2 * num_start_alive) {
-    //        std::cout << "File does not contains enough coords" << std::endl;
-    //        /*cudaFree(map);
-    //        cudaFree(next_state);*/
-    //        exit(1);
-    //    }
-    //}
-    //else {
-    //    std::cout << "Please input number of threads" << std::endl;
-    //    std::cin >> num_threads;
-    //    std::cout << "Now, please input width and length"<< std::endl;
-    //    std::cin >> width >> length;
-    //    total_size = width * length;
-    //    //cudaMalloc((void**)&host_map, sizeof(bool) * total_size);
-    //    //cudaMalloc((void**)&host_next_state, sizeof(bool) * total_size);
-    //    host_map = new bool[total_size];
-    //    host_next_state = new bool[total_size];
-    //    //cudaMemset(host_map, false, total_size);
-    //    //cudaMemset(host_next_state, false, total_size);
-    //    for (u_int i = 0; i < total_size; ++i)
-    //        host_map[i] = host_next_state[i] = false;
-    //    u_int counter = 0;
-    //    u_int x_pos, y_pos;
-    //    u_int num_start_alive;
-    //    std::cout << "Input number of alive cells at the beginning" << std::endl;
-    //    std::cin >> num_start_alive;
-    //    std::cout << "Input starting data" << std::endl;
-    //    while (counter != num_start_alive) {
-    //        std::cin >> x_pos >> y_pos;
-    //        if (x_pos >= width)
-    //            x_pos = x_pos % width;
-    //        if (y_pos >= length)
-    //            y_pos = y_pos % length;
-    //        counter++;
-    //        host_map[x_pos * width + y_pos] = true;
-    //    }
-    //    if (counter < num_start_alive) {
-    //        std::cout << "File does not contains enough coords" << std::endl;
-    //        /*cudaFree(map);
-    //        cudaFree(next_state);*/
-    //        exit(1);
-    //    }
-    //}
-    image_width = 32;
-    image_height = 32;
-    u_int total_size = image_width * image_height;
-    num_threads = 32;
-    host_map = new bool[total_size];
-    host_next_state = new bool[total_size];
-    for (u_int i = 0; i < total_size; ++i)
-        host_map[i] = host_next_state[i] = false;
-    host_map[7 * image_width + 7] = true;
-    host_map[7 * image_width + 8] = true;
-    host_map[7 * image_width + 9] = true;
-    host_map[6 * image_width + 6] = true;
-    host_map[6 * image_width + 7] = true;
-    host_map[6 * image_width + 8] = true;
+    //image_width = 32;
+    //image_height = 32;
+    //u_int total_size = image_width * image_height;
+    //num_threads = 32;
+    //host_map = new bool[total_size];
+    //host_next_state = new bool[total_size];
+    //for (u_int i = 0; i < total_size; ++i)
+    //    host_map[i] = host_next_state[i] = false;
+    //host_map[7 * image_width + 7] = true;
+    //host_map[7 * image_width + 8] = true;
+    //host_map[7 * image_width + 9] = true;
+    //host_map[6 * image_width + 6] = true;
+    //host_map[6 * image_width + 7] = true;
+    //host_map[6 * image_width + 8] = true;
     cudaMalloc((void**)&map, sizeof(bool) * total_size);
     cudaMalloc((void**)&next_state, sizeof(bool) * total_size);
     cudaMalloc((void**)&cuda_dest_resource, sizeof(int32_t) * total_size);
@@ -444,13 +465,13 @@ int main(int argc, char** argv) {
     cudaMemset(map, false, total_size);
     cudaMemset(next_state, false, total_size);
     //host_map = new bool[total_size];
-    //std::cout << "Do you want to start [Y/n]?" << std::endl;
-    //char decision;
-    //std::cin >> decision;
-    //if (decision != 'y' && decision != 'Y') {
-    //    std::cout << "Ending" << std::endl;
-    //    return 0;
-    //}
+    std::cout << "Do you want to start [Y/n]?" << std::endl;
+    char decision;
+    std::cin >> decision;
+    if (decision != 'y' && decision != 'Y') {
+        std::cout << "Ending" << std::endl;
+        return 0;
+    }
 
 
     //glutInit(&argc, argv);
@@ -487,9 +508,11 @@ int main(int argc, char** argv) {
     shDrawTex = compileGLSLprogram(glsl_drawtex_vertshader_src, glsl_drawtex_fragshader_src);
     //glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     while (!glfwWindowShouldClose(window)) {
-        display();
+        display(image_width, image_height, map, next_state, num_threads);
         glfwSwapBuffers(window);
         glfwPollEvents();
+        glfwSetKeyCallback(window, key_callback);
+        Sleep(delay);
     }
     glfwTerminate();
     //glutDisplayFunc(display);

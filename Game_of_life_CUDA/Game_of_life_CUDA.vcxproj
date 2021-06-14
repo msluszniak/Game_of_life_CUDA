@@ -88,7 +88,8 @@
     <CudaCompile Include="kernel.cu" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="..\..\..\toad.txt" />
+    <ClInclude Include="GUI.h" />
+    <ClInclude Include="inputer.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

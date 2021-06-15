@@ -90,6 +90,12 @@
   <ItemGroup>
     <ClInclude Include="GUI.h" />
     <ClInclude Include="inputer.h" />
+    <ClInclude Include="window_handler.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="GUI.cpp" />
+    <ClCompile Include="inputer.cpp" />
+    <ClCompile Include="window_handler.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

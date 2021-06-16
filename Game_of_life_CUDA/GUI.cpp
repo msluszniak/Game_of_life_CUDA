@@ -1,5 +1,7 @@
 #include "GUI.h"
 
+
+// function create texture, set params and register renderbuffer
 __host__ void createTextureDst(GLuint* tex_cudaResult, unsigned int size_x, unsigned int size_y, cudaGraphicsResource*& cuda_tex_result_resource) {
     // this section creates texture
     glGenTextures(1, tex_cudaResult);
@@ -18,6 +20,8 @@ __host__ void createTextureDst(GLuint* tex_cudaResult, unsigned int size_x, unsi
         GL_TEXTURE_2D, cudaGraphicsMapFlagsWriteDiscard);
 }
 
+
+// function creates shaders (fragment and vertex) using GLEW macros
 GLuint compileGLSLprogram(const char* vertex_shader_src, const char* fragment_shader_src) {
     GLuint v, f, p = 0;
 
@@ -46,7 +50,7 @@ GLuint compileGLSLprogram(const char* vertex_shader_src, const char* fragment_sh
     return p;
 }
 
-
+// display image using OpenGL functions 
 void displayImage(GLuint texture, GLint shDrawTex) {
     glBindTexture(GL_TEXTURE_2D, texture);
     glEnable(GL_TEXTURE_2D);
@@ -61,7 +65,7 @@ void displayImage(GLuint texture, GLint shDrawTex) {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    glViewport(0, 0, 512, 512);
+    glViewport(0, 0, IMAGE_WIDTH_PIXELS, IMAGE_HEIGHT_PIXELS);
 
     glUseProgram(shDrawTex);
     GLint id = glGetUniformLocation(shDrawTex, "texImage");

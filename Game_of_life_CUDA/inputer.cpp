@@ -1,10 +1,13 @@
 #include "inputer.h"
 
+// function get source of initial data (file or manually)
 char get_mode() {
     std::cout << "Welcome to the game of life!" << std::endl;
     std::cout << "Please choose f if you want to load data from file or press m to input data manually." << std::endl;
 input:
     char mode = getchar();
+    if(mode == '\n')
+        goto input;
     if (mode != 'f' && mode != 'm') {
         std::cout << "You choose wrong mode: " << mode << ". Please use f for file or m for manually." << std::endl;
         goto input;
@@ -12,17 +15,18 @@ input:
     return mode;
 }
 
+// function which load initial data from file
 void input_file(inputer_data* input) {
-    std::cout << "Now put the name of the file with size and start positions" << std::endl;
+    std::cout << "Now put the name of the file. File must contain: number of threads, width and height, number of coords and coords." << std::endl;
     std::string file_name;
     std::cin >> file_name;
 
     std::ifstream infile(file_name.c_str());
     if (!infile) {
         std::cout << "Cannot open file correctly" << std::endl;
+        exit(1);
     }
     if (!(infile >> input->num_threads)) {
-        std::cout << input->num_threads << std::endl;
         std::cout << "Wrong file format, file must include number of threads" << std::endl;
         exit(1);
     }
@@ -59,12 +63,17 @@ void input_file(inputer_data* input) {
     infile.close();
 }
 
+// function which load initial data from stdin
 void input_manual(inputer_data* input) {
-    std::cout << "Please input number of threads" << std::endl;
+    std::cout << "Please input number of threads (take into consideration that number of threads has to divide width * height)" << std::endl;
     std::cin >> input->num_threads;
-    std::cout << "Now, please input width and length" << std::endl;
+    std::cout << "Now, please input width and height" << std::endl;
     std::cin >> input->image_width >> input->image_height;
     input->total_size = input->image_width * input->image_height;
+    if (input->total_size % input->num_threads != 0) {
+        std::cout << "Number of threads does not divide width * height" << std::endl;
+        exit(1);
+    }
     input->host_map = new bool[input->total_size];
     input->host_next_state = new bool[input->total_size];
     for (u_int i = 0; i < input->total_size; ++i)
@@ -86,6 +95,35 @@ void input_manual(inputer_data* input) {
     }
 }
 
+// function which set colors of tiles
+void choose_color(inputer_data* input) {
+    std::cout << "Would you like to choose colors[Y/n]?" << std::endl;
+    dec:
+    std::string decision;
+    std::cin >> decision;
+    if (decision == "y" || decision == "Y" || decision == "Yes" || decision == "yes") {
+    color:
+        int color, background_color;
+        std::cout << "Please input color and background color (integers)." << std::endl;
+        std::cin >> color >> background_color;
+        if (color == background_color) {
+            std::cout << "Sorry, but you choose the same color for tiles and background. Please try again." << std::endl;
+            goto color;
+        }
+        else {
+            input->color = color;
+            input->background_color = background_color;
+        }
+    }
+    else if (decision == "n" || decision == "no" || decision == "No") {
+        input->color = WHITE_COLOR;
+        input->background_color = BLACK_COLOR;
+    }
+    else
+        goto dec;
+}
+
+// create inputer_data object
 inputer_data input_wrapper() {
     inputer_data input;
     char mode = get_mode();
@@ -96,5 +134,6 @@ inputer_data input_wrapper() {
     else {
         std::cout << "Something goes wrong" << std::endl;
     }
+    choose_color(&input);
     return input;
 }
